@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-from json import load
+from json import load, loads
 from codecs import open
 import psycopg2
 from configparser import ConfigParser
@@ -17,15 +17,15 @@ class KP2VIAA(object):
                  path_genres_mapping="resources/genres_mapping.json",
                  path_languages_mapping="resources/languages_mapping.json",
                  path_to_qas_auth="resources/qasviaaauthenticationbase64.txt",
-                 path_to_xsd = "resources/viaa_metadatamodel_van_viaa_naar_mam.xsd",
-                 path_to_pass_viaa = "resources/pass_viaa.txt"):
+                 path_to_xsd="resources/viaa_metadatamodel_van_viaa_naar_mam.xsd",
+                 path_to_pass_viaa="resources/pass_viaa.txt"):
         self.path_to_viaa2kp_mapping = path_to_viaa2kp
         self.path_metadata_mapping = path_metadata_mapping
         self.path_genres_mapping = path_genres_mapping
         self.path_languages_mapping = path_languages_mapping
         self.path_to_qas_auth = path_to_qas_auth
         self.path_to_pass_viaa = path_to_pass_viaa
-        self.viaa_id_to_kp_productie_show_id_mapping = None
+        self.viaa_id_to_kp_productie_show_id_mapping = {}
         self.path_to_dbcfg = path_to_dbcfg
         self.path_to_xsd = path_to_xsd
         self.cfg = ConfigParser()
@@ -36,13 +36,20 @@ class KP2VIAA(object):
                                      user=self.cfg['db']['user'],
                                      password=self.cfg['db']['pwd'])
         self.knst.set_client_encoding('UTF-8')
-
+        self.mediahaven_xml = None
+        self.mediahaven_json = None
         self.general_info = None
         self.people_info = None
         self.organisations_info = None
         self.genre_info = None
         self.language_info = None
         self.update_tree = None
+
+    def get_kunstenpunt_productie_id(self, viaa_id):
+        self.consume_api(viaa_id)
+        localids = ([item["value"][0] for item in self.mediahaven_json["mediaDataList"][0]["mdProperties"] if item["attribute"] == "dc_identifier_localids"])
+        kp_prod_slug = [item["value"] for item in localids if item["attribute"] == "kp_productie_id"][0]
+        self.viaa_id_to_kp_productie_show_id_mapping[viaa_id] = {"kp_productie_id": kp_prod_slug}
 
     def read_mapping_viaa_to_kp(self):
         """
@@ -88,7 +95,7 @@ class KP2VIAA(object):
         """.format(kp_productie_id)
         cur.execute(sql)
         general_info = cur.fetchall()
-        self.general_info = DataFrame(general_info, columns=['name', 'season', 'rerun_title','rerun_season'])
+        self.general_info = DataFrame(general_info, columns=['name', 'season', 'rerun_title', 'rerun_season'])
         if self.general_info["rerun_title"][0] == None:
             self.general_info = self.general_info.drop(['rerun_title', 'rerun_season'], axis=1)
             self.general_info['rerun'] = None
@@ -191,11 +198,19 @@ class KP2VIAA(object):
             "Accept": "application/xml",
             "Authorization": "Basic " + base64pass
         }
-        #url = "https://archief-qas.viaa.be/mediahaven-rest-api/resources/media/{0}".format(viaa_id)
         url = "https://archief-qas.viaa.be/mediahaven-rest-api/resources/media/?q=%2B(MediaObjectFragmentPID:{0})".format(viaa_id)
+
         r = requests.get(url, headers=header)
         parser = etree.XMLParser(ns_clean=True, recover=True, encoding="utf-8")
         self.mediahaven_xml = etree.fromstring(r.text.encode("utf-8"), parser=parser)
+
+        header = {
+            "Accept": "application/json",
+            "Authorization": "Basic " + base64pass
+        }
+        url = "https://archief-qas.viaa.be/mediahaven-rest-api/resources/media/?q=%2B(MediaObjectFragmentPID:{0})".format(viaa_id)
+        r = requests.get(url, headers=header)
+        self.mediahaven_json = loads(r.text)
 
     def create_viaa_xml(self):
         """
@@ -238,7 +253,7 @@ class KP2VIAA(object):
         viaa_xmlschema.validate(self.update_tree)
         log = viaa_xmlschema.error_log
         #error = log.last_error
-        print log
+        print(log)
 
     def insert_tags_xml(self, parent_tag, child_tag, index):
         element = list(self.update_tree.iter(parent_tag))[0]
@@ -288,13 +303,13 @@ class KP2VIAA(object):
             mapping_functies = load(f)
         for viaa_functie in mapping_functies["Maker"]:
             for kp_functie in mapping_functies["Maker"][viaa_functie]:
-                if functie.decode("utf-8") == kp_functie:
+                if functie == kp_functie:
                     return "Maker", viaa_functie
                 else:
                     pass
         for viaa_functie in mapping_functies["Bijdrager"]:
             for kp_functie in mapping_functies["Bijdrager"][viaa_functie]:
-                if functie.decode("utf-8") == kp_functie:
+                if functie == kp_functie:
                     return "Bijdrager", viaa_functie
                 else:
                     pass
@@ -315,7 +330,7 @@ class KP2VIAA(object):
             if viaa_function_level == "Maker":
                     child = etree.Element(viaa_function)
                     element.insert(0, child)
-                    child.text = full_name.decode("utf-8")
+                    child.text = full_name
             else:
                 pass
 
@@ -336,7 +351,7 @@ class KP2VIAA(object):
             if viaa_function_level == "Bijdrager":
                     child = etree.Element(viaa_function)
                     element.insert(0, child)
-                    child.text = full_name.decode("utf-8")
+                    child.text = full_name
             else:
                 pass
 
@@ -357,7 +372,7 @@ class KP2VIAA(object):
             if viaa_function_level == "Maker":
                     child = etree.Element(viaa_function)
                     element.insert(0, child)
-                    child.text = full_name.decode("utf-8")
+                    child.text = full_name
             else:
                 pass
 
@@ -378,7 +393,7 @@ class KP2VIAA(object):
             if viaa_function_level == "Bijdrager":
                     child = etree.Element(viaa_function)
                     element.insert(0, child)
-                    child.text = full_name.decode("utf-8")
+                    child.text = full_name#.decode("utf-8")
             else:
                 pass
 
@@ -410,7 +425,7 @@ class KP2VIAA(object):
             viaa_genre = self.map_kp_genres_to_viaa_genres(kp_genre)
             child = etree.Element("multiselect")
             element.insert(0, child)
-            child.text = viaa_genre.decode("utf-8")    #?!
+            child.text = viaa_genre
 
     def map_kp_languages_to_viaa_languages(self, language):
         """
@@ -445,10 +460,9 @@ class KP2VIAA(object):
                 viaa_language = self.map_kp_languages_to_viaa_languages(kp_taal)
                 child = etree.Element("multiselect")
                 element.insert(0, child)
-                child.text = viaa_language.decode("utf-8")    #?!  why not [0]?
+                child.text = viaa_language#.decode("utf-8")    #?!  why not [0]?
 
-    def test_if_PID_unique(self):
-
+    def test_if_pid_unique(self):
         class PIDError(Exception):
 
             def __init__(self, value):
@@ -483,8 +497,8 @@ class KP2VIAA(object):
         Writes the the xlm tree to an xml file
         :return:
         """
-        with open("../resources/xml_viaa.xml", "w") as f:
-            f.write(etree.tostring(self.update_tree, pretty_print=True, xml_declaration=True, encoding='UTF-8'))
+        with open("./resources/xml_viaa.xml", "w") as f:
+            f.write(etree.tostring(self.update_tree, pretty_print=True, xml_declaration=True, encoding='UTF-8').decode("utf-8"))
 
     def send_update_tree_to_viaa(self):
         """
@@ -497,12 +511,58 @@ class KP2VIAA(object):
         url = "https://archief-qas.viaa.be/mediahaven-rest-api/resources/media/{0}".format(fragmentId)
         username = "tom.ruette@kunsten.be"
         passwd = pass_viaa
-        files = {'metadata': ('../resources/xml_viaa.xml', open('../resources/xml_viaa.xml', 'rb'))}
+        files = {'metadata': ('./resources/xml_viaa.xml', open('./resources/xml_viaa.xml', 'rb'))}
         res = requests.post(url, files=files, auth=(username, passwd))
-        print res
+
+    def get_kunstenpunt_metadata(self, viaa_id):
+        """
+        Fetches the kp metadata for a certain viaa id
+        :param viaa_id:
+        :return:
+        """
+        kp2viaa.get_kunstenpunt_productie_id(viaa_id)
+        self.get_kp_metadata_personen_for_viaa_id(viaa_id)
+        self.get_kp_metadata_general_for_viaa_id(viaa_id)
+        self.get_kp_metadata_organisaties_for_viaa_id(viaa_id)
+        self.get_kp_metadata_genres_for_viaa_id(viaa_id)
+        self.get_kp_metadata_languages_for_viaa_id(viaa_id)
+
+    def get_viaa_metadata(self, viaa_id):
+        """
+        Fetches the viaa metadata via api
+        :param viaa_id:
+        :return:
+        """
+        self.consume_api(viaa_id)
+        self.create_viaa_xml()
+
+    def set_kp_metadata_to_viaa(self):
+        """
+        Writes out the kp metadata to the viaa model and puts it in the viaa repo
+        :return:
+        """
+        self.ensure_element_exists("dc_titles")
+        self.ensure_element_exists('dc_creators')
+        self.ensure_element_exists('dc_contributors')
+        self.ensure_element_exists('dc_types')
+        self.ensure_element_exists("dc_languages")
+        self.write_kp_general_to_update_tree()
+        self.write_kp_persons_to_viaa_makers()
+        self.write_kp_persons_to_viaa_contributors()
+        self.write_kp_organisations_to_viaa_makers()
+        self.write_kp_organisations_to_viaa_contributors()
+        self.write_kp_languages_to_viaa_languages()
+        self.write_kp_genres_to_viaa_genres()
+        self.write_tree_to_xml()
+        self.send_update_tree_to_viaa()
 
 
-#if __name__ == "__main__":
-
-
-
+if __name__ == "__main__":
+    viaa_id = "qsc53dzd90"
+    kp2viaa = KP2VIAA()
+    print("finding kunstenpunt metadata")
+    kp2viaa.get_kunstenpunt_metadata(viaa_id)
+    print("combining viaa metadata with kunstenpunt metadata")
+    kp2viaa.get_viaa_metadata(viaa_id)
+    print("sending enriched metadata to viaa")
+    kp2viaa.set_kp_metadata_to_viaa()

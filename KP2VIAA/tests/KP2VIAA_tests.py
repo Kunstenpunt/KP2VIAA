@@ -10,8 +10,6 @@ from lxml import etree
 import os
 
 
-
-
 class KP2VIAATests(TestCase):
     def setUp(self):
         self.kp2viaa = KP2VIAA(path_to_dbcfg="../resources/db.cfg",
@@ -24,6 +22,10 @@ class KP2VIAATests(TestCase):
                                path_to_pass_viaa="../resources/pass_viaa.txt")
         self.maxDiff = None
 
+    def test_get_kunstenpunt_productie_id(self):
+        self.kp2viaa.get_kunstenpunt_productie_id("bv79s1r49d")
+        self.assertEqual(self.kp2viaa.viaa_id_to_kp_productie_show_id_mapping["bv79s1r49d"]["kp_productie_id"], 429013)
+
     def test_map_kp_general_to_dc_titles(self):
         self.kp2viaa.read_mapping_viaa_to_kp()
         self.kp2viaa.get_kp_metadata_general_for_viaa_id("viaa_id")
@@ -32,7 +34,6 @@ class KP2VIAATests(TestCase):
         self.kp2viaa.write_kp_general_to_update_tree()
         self.assertTrue(len(self.kp2viaa.update_tree.xpath("//seizoen")), 1)
         print(etree.tostring(self.kp2viaa.update_tree, pretty_print=True))
-
 
     def test_ensure_element_exists(self):
         self.kp2viaa.create_viaa_xml()
@@ -65,9 +66,6 @@ class KP2VIAATests(TestCase):
         self.assertEqual(self.kp2viaa.update_tree.xpath("//Maker")[0].text, "Rosas")
         print(etree.tostring(self.kp2viaa.update_tree, pretty_print=True))
 
-
-    #no test for organisations to viaa contributors because there is no relevant metadata for this
-
     def test_map_kp_organisations_to_viaa_contributors(self):
         self.kp2viaa.read_mapping_viaa_to_kp()
         self.kp2viaa.get_kp_metadata_organisaties_for_viaa_id("viaa_id")
@@ -76,7 +74,6 @@ class KP2VIAATests(TestCase):
         self.kp2viaa.write_kp_organisations_to_viaa_contributors()
         print(etree.tostring(self.kp2viaa.update_tree, pretty_print=True))
 
-
     def test_map_kp_genres_to_viaa_genres(self):
         self.kp2viaa.read_mapping_viaa_to_kp()
         self.kp2viaa.get_kp_metadata_genres_for_viaa_id("viaa_id")
@@ -84,7 +81,6 @@ class KP2VIAATests(TestCase):
         self.kp2viaa.ensure_element_exists('dc_types')
         self.kp2viaa.write_kp_genres_to_viaa_genres()
         print(etree.tostring(self.kp2viaa.update_tree, pretty_print=True))
-
 
     def test_map_kp_languages_to_viaa_languages(self):
         self.kp2viaa.read_mapping_viaa_to_kp()
@@ -123,7 +119,7 @@ class KP2VIAATests(TestCase):
         encoded_name = self.kp2viaa.people_info.ix[18]["full name"]
         self.kp2viaa.create_viaa_xml()
         child = etree.Element("test")
-        child.text = encoded_name.decode("utf-8")
+        child.text = encoded_name #.decode("utf-8")
         self.kp2viaa.update_tree.append(child)
         #print(etree.tostring(self.kp2viaa.update_tree, pretty_print=True, encoding="utf-8"))
 
@@ -203,7 +199,7 @@ class KP2VIAATests(TestCase):
         test_api_output = etree.fromstring("""<searchResult><totalNrOfResults>2</totalNrOfResults></searchResult>""")
         self.kp2viaa.mediahaven_xml = test_api_output
         with self.assertRaises(Exception) as context:
-            self.kp2viaa.test_if_PID_unique()
+            self.kp2viaa.test_if_pid_unique()
         self.assertEquals("'multiple items found in viaa for pid'", str(context.exception))
 
     # def test_validate_kp_input_to_viaa_xsd(self):     Unfinished: XSD VIAA does not match VIAA metadatamodel
@@ -213,10 +209,9 @@ class KP2VIAATests(TestCase):
     #     self.assertTrue(self.kp2viaa.validate_updated_tree_to_VIAA_xsd())
 
     def test_get_mediahaven_fragmentID(self):
-
         self.kp2viaa.consume_api("bv79s1r49d")
         id = self.kp2viaa.get_mediahaven_fragmentId()
-        self.assertEqual(id,"d9e8142d64714b2ab9081317f7ef0c64a33b914162b34b25a5ab91ba192181c744fb015640ec43c9be820ab05ad4a42e")
+        self.assertEqual(id, "d9e8142d64714b2ab9081317f7ef0c64a33b914162b34b25a5ab91ba192181c744fb015640ec43c9be820ab05ad4a42e")
 
     def test_write_to_xml(self):
 
@@ -234,16 +229,3 @@ class KP2VIAATests(TestCase):
         self.test_write_all()
         self.kp2viaa.write_tree_to_xml()
         self.kp2viaa.send_update_tree_to_viaa()
-
-
-
-
-
-
-
-
-
-
-
-
-
